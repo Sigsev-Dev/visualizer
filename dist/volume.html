@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
+                           integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+                           crossorigin="anonymous">
+                           <style type="text/css">
+                            body { background: rgb(0, 0, 0) !important; } /* Adding !important forces the browser to overwrite the default style applied by Bootstrap */
+                         </style>
+                         
+    <title>WebGL Volume Raycaster</title>
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+</head>
+<body>
+
+    <script src="./stats-js/build/stats.min.js"></script>
+    <script>
+    {
+        var array = [];
+        for ( var i = 0; i < 1; i ++ ) {
+            var stats = new Stats();
+            stats.dom.style.position = 'relative';
+            stats.dom.style.float = 'left';
+            document.body.appendChild( stats.dom );
+
+            array.push( stats );  
+        }
+
+        function animate() {
+            for ( var i = 0; i < array.length; i ++ ) {
+                var stats = array[ i ];
+                stats.update();
+            }
+            requestAnimationFrame( animate );
+        }
+        animate();
+    }
+    </script>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12 text-center">
+                <h4 class="text-white">WebGL Volume Raycaster</h4>
+                <canvas id="glcanvas" class="img-fluid" width="640" height="480"></canvas>
+            </div>
+            <div class="mx-auto col-12 col-lg-8 row">
+                <div class="text-white" class="col-12 col-lg-6 mb-lg-0 mb-2">
+                    Volume: <select class="text-white bg-dark" id="volumeList" onchange="selectVolume()"></select>
+                </div>
+                <div class="text-white" class="col-12 col-lg-6 mb-lg-0 mb-2">
+                    Colormap: <select class="text-white bg-dark" id="colormapList" onchange="selectColormap()"></select>
+                </div>
+                <div class="col-12 mt-lg-2 mt-0">
+                    <h4 class="text-white">Controls</h4>
+                    <p class="text-white">Desktop: Left-click + drag to rotate, scroll to zoom,
+                    right-click + drag to pan.
+                    <br/>
+                    Touch: One finger drag to rotate, pinch to zoom, two finger drag to pan.
+
+                    <p class="text-white" id="loadingText"></p>
+                    <div class="progress mb-2">
+                        <div id="loadingProgressBar" class="progress-bar" role="progressbar"
+                                                                          aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/gl-matrix-min.js"></script>
+    <script src="js/webgl-util.js"></script>
+    <script src="js/shader-srcs.js"></script>
+    <script src="js/FileSaver.js"></script>
+    <script src="js/volume-raycaster.js"></script>
+
+</body>
+</html>
