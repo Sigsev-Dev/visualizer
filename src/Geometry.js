@@ -1,3 +1,4 @@
+
 /* eslint-disable import/prefer-default-export */
 /* eslint-disable import/no-extraneous-dependencies */
 
@@ -6,28 +7,40 @@ import 'vtk.js/Sources/favicon';
 // Load the rendering pieces we want to use (for both WebGL and WebGPU)
 import 'vtk.js/Sources/Rendering/Profiles/Geometry';
 
+import { formatBytesToProperUnit, debounce } from 'vtk.js/Sources/macros';
 import HttpDataAccessHelper from 'vtk.js/Sources/IO/Core/DataAccessHelper/HttpDataAccessHelper';
 import vtkActor from 'vtk.js/Sources/Rendering/Core/Actor';
+import vtkDataArray from 'vtk.js/Sources/Common/Core/DataArray';
+import vtkScalarBarActor from 'vtk.js/Sources/Rendering/Core/ScalarBarActor';
 import vtkColorMaps from 'vtk.js/Sources/Rendering/Core/ColorTransferFunction/ColorMaps';
 import vtkColorTransferFunction from 'vtk.js/Sources/Rendering/Core/ColorTransferFunction';
 import vtkFullScreenRenderWindow from 'vtk.js/Sources/Rendering/Misc/FullScreenRenderWindow';
 import vtkMapper from 'vtk.js/Sources/Rendering/Core/Mapper';
 import vtkURLExtract from 'vtk.js/Sources/Common/Core/URLExtract';
 import vtkXMLPolyDataReader from 'vtk.js/Sources/IO/XML/XMLPolyDataReader';
-import vtkTubeFilter from 'vtk.js/Sources/Filters/General/TubeFilter';
+import vtkFPSMonitor from 'vtk.js/Sources/Interaction/UI/FPSMonitor';
+
+// Force DataAccessHelper to have access to various data source
+import 'vtk.js/Sources/IO/Core/DataAccessHelper/HtmlDataAccessHelper';
+import 'vtk.js/Sources/IO/Core/DataAccessHelper/JSZipDataAccessHelper';
+
 import {
   ColorMode,
   ScalarMode,
 } from 'vtk.js/Sources/Rendering/Core/Mapper/Constants';
-import { VaryRadius } from 'vtk.js/Sources/Filters/General/TubeFilter/Constants';
 
-import style from './TubesViewer.module.css';
+import style from './GeometryViewer.module.css';
 import icon from './favicon-96x96.png';
+
+
+
 
 let autoInit = true;
 let background = [0, 0, 0];
+let fullScreenRenderWindow;
 let renderWindow;
 let renderer;
+let scalarBarActor;
 
 global.pipeline = {};
 
@@ -42,9 +55,6 @@ const selectorClass =
   background.length === 3 && background.reduce((a, b) => a + b, 0) < 1.5
     ? style.dark
     : style.light;
-
-// name
-const defaultName = userParams.name || '';
 
 // lut
 const lutName = userParams.lut || 'erdc_rainbow_bright';
@@ -84,6 +94,13 @@ addDataSetButton.addEventListener('click', () => {
   rootControllerContainer.style.display = isVisible ? 'none' : 'flex';
 });
 
+const fpsMonitor = vtkFPSMonitor.newInstance();
+const fpsElm = fpsMonitor.getFpsMonitorContainer();
+fpsElm.classList.add(style.fpsMonitor);
+
+// fpsMonitor.setContainer(document.querySelector('body'));
+
+
 // ----------------------------------------------------------------------------
 // Add class to body if iOS device
 // ----------------------------------------------------------------------------
@@ -97,25 +114,40 @@ if (iOS) {
 // ----------------------------------------------------------------------------
 
 function emptyContainer(container) {
+  fpsMonitor.setContainer(null);
   while (container.firstChild) {
     container.removeChild(container.firstChild);
   }
 }
-
 // ----------------------------------------------------------------------------
 
 function createViewer(container) {
-  const fullScreenRenderer = vtkFullScreenRenderWindow.newInstance({
+  fullScreenRenderWindow = vtkFullScreenRenderWindow.newInstance({
     background,
     rootContainer: container,
     containerStyle: { height: '100%', width: '100%', position: 'absolute' },
   });
-  renderer = fullScreenRenderer.getRenderer();
-  renderWindow = fullScreenRenderer.getRenderWindow();
+  renderer = fullScreenRenderWindow.getRenderer();
+  renderWindow = fullScreenRenderWindow.getRenderWindow();
   renderWindow.getInteractor().setDesiredUpdateRate(15);
 
   container.appendChild(rootControllerContainer);
   container.appendChild(addDataSetButton);
+
+  scalarBarActor = vtkScalarBarActor.newInstance();
+  renderer.addActor(scalarBarActor);
+
+  if (userParams.fps) {
+    if (Array.isArray(userParams.fps)) {
+      fpsMonitor.setMonitorVisibility(...userParams.fps);
+      if (userParams.fps.length === 4) {
+        fpsMonitor.setOrientation(userParams.fps[3]);
+      }
+    }
+    fpsMonitor.setRenderWindow(renderWindow);
+    fpsMonitor.setContainer(container);
+    fullScreenRenderWindow.setResizeCallback(fpsMonitor.update);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -140,7 +172,7 @@ function createPipeline(fileName, fileContents) {
     'Points',
     'Wireframe',
     'Surface',
-    'Surface with Edge', 
+    'Surface with Edge',
   ]
     .map(
       (name, idx) =>
@@ -165,55 +197,13 @@ function createPipeline(fileName, fileContents) {
   opacitySelector.setAttribute('max', '100');
   opacitySelector.setAttribute('min', '1');
 
-  const tubingRLabel = document.createElement('label');
-  tubingRLabel.setAttribute('class', selectorClass);
-  tubingRLabel.innerHTML = 'Radius';
-  const radiusSelector = document.createElement('input');
-  radiusSelector.setAttribute('class', selectorClass);
-  radiusSelector.setAttribute('type', 'range');
-  radiusSelector.setAttribute('value', '5');
-  radiusSelector.setAttribute('max', '100');
-  radiusSelector.setAttribute('min', '1');
-
-  const tubingnSLabel = document.createElement('label');
-  tubingnSLabel.setAttribute('class', selectorClass);
-  tubingnSLabel.innerHTML = 'No. of Sides';
-  const nsidesSelector = document.createElement('input');
-  nsidesSelector.setAttribute('class', selectorClass);
-  nsidesSelector.setAttribute('type', 'range');
-  nsidesSelector.setAttribute('value', '20');
-  nsidesSelector.setAttribute('max', '100');
-  nsidesSelector.setAttribute('min', '3');
-
-  const tubingCLabel = document.createElement('label');
-  tubingCLabel.setAttribute('class', selectorClass);
-  tubingCLabel.innerHTML = 'Capping';
-  const cappingSelector = document.createElement('input');
-  cappingSelector.setAttribute('class', 'checkbox');
-  cappingSelector.setAttribute('type', 'checkbox');
-  cappingSelector.setAttribute('checked', 'true');
-
-  const tubingoRLabel = document.createElement('label');
-  tubingoRLabel.setAttribute('class', selectorClass);
-  tubingoRLabel.innerHTML = 'On Ratio';
-  const onRatioSelector = document.createElement('input');
-  onRatioSelector.setAttribute('type', 'number');
-  onRatioSelector.setAttribute('value', '1');
-  onRatioSelector.setAttribute('max', '6');
-  onRatioSelector.setAttribute('min', '1');
-
   const labelSelector = document.createElement('label');
   labelSelector.setAttribute('class', selectorClass);
   labelSelector.innerHTML = fileName;
 
-  const tubeCheckBox = document.createElement('input');
-  tubeCheckBox.setAttribute('class', 'checkbox');
-  tubeCheckBox.setAttribute('type', 'checkbox');
-  tubeCheckBox.setAttribute('checked', true);
-
-  const tubingLabel = document.createElement('label');
-  tubingLabel.setAttribute('class', selectorClass);
-  tubingLabel.innerHTML = 'Tubing';
+  const immersionSelector = document.createElement('button');
+  immersionSelector.setAttribute('class', selectorClass);
+  immersionSelector.innerHTML = 'Start AR';
 
   const controlContainer = document.createElement('div');
   controlContainer.setAttribute('class', style.control);
@@ -223,52 +213,32 @@ function createPipeline(fileName, fileContents) {
   controlContainer.appendChild(colorBySelector);
   controlContainer.appendChild(componentSelector);
   controlContainer.appendChild(opacitySelector);
-  controlContainer.appendChild(tubingLabel);
-  controlContainer.appendChild(tubeCheckBox);
-  rootControllerContainer.appendChild(controlContainer);
 
-  const tubeControlContainer = document.createElement('div');
-  tubeControlContainer.setAttribute('class', style.control);
-  tubeControlContainer.appendChild(tubingRLabel);
-  tubeControlContainer.appendChild(radiusSelector);
-  tubeControlContainer.appendChild(tubingnSLabel);
-  tubeControlContainer.appendChild(nsidesSelector);
-  tubeControlContainer.appendChild(tubingoRLabel);
-  tubeControlContainer.appendChild(onRatioSelector);
-  tubeControlContainer.appendChild(tubingCLabel);
-  tubeControlContainer.appendChild(cappingSelector);
-  rootControllerContainer.appendChild(tubeControlContainer);
+  if (
+    navigator.xr !== undefined &&
+    navigator.xr.isSessionSupported('immersive-ar') &&
+    fullScreenRenderWindow.getApiSpecificRenderWindow().getXrSupported()
+  ) {
+    controlContainer.appendChild(immersionSelector);
+  }
+  rootControllerContainer.appendChild(controlContainer);
 
   // VTK pipeline
   const vtpReader = vtkXMLPolyDataReader.newInstance();
   vtpReader.parseAsArrayBuffer(fileContents);
 
-  const tubeFilter = vtkTubeFilter.newInstance();
-  tubeFilter.setRadius(0.05);
-  tubeFilter.setCapping(true);
-  tubeFilter.setNumberOfSides(20);
-  tubeFilter.setInputConnection(vtpReader.getOutputPort());
-  tubeFilter.setInputArrayToProcess(0, 'Radius', 'PointData', 'Scalars');
-  tubeFilter.setVaryRadius(VaryRadius.VARY_RADIUS_BY_SCALAR);
-
   const lookupTable = vtkColorTransferFunction.newInstance();
-  // const source = tubeFilter.getOutputData(0);
+  const source = vtpReader.getOutputData(0);
   const mapper = vtkMapper.newInstance({
     interpolateScalarsBeforeMapping: false,
     useLookupTableScalarRange: true,
     lookupTable,
     scalarVisibility: false,
   });
-  const tubeMapper = vtkMapper.newInstance({
-    interpolateScalarsBeforeMapping: false,
-    useLookupTableScalarRange: true,
-    lookupTable,
-    scalarVisibility: false,
-  });
   const actor = vtkActor.newInstance();
-  const tubeActor = vtkActor.newInstance();
-  const scalars = tubeFilter.getOutputData().getPointData().getScalars();
+  const scalars = source.getPointData().getScalars();
   const dataRange = [].concat(scalars ? scalars.getRange() : [0, 1]);
+  let activeArray = vtkDataArray;
 
   // --------------------------------------------------------------------
   // Color handling
@@ -279,6 +249,7 @@ function createPipeline(fileName, fileContents) {
     lookupTable.applyColorMap(preset);
     lookupTable.setMappingRange(dataRange[0], dataRange[1]);
     lookupTable.updateRange();
+    renderWindow.render();
   }
   applyPreset();
   presetSelector.addEventListener('change', applyPreset);
@@ -291,8 +262,8 @@ function createPipeline(fileName, fileContents) {
     const [visibility, representation, edgeVisibility] = event.target.value
       .split(':')
       .map(Number);
-    tubeActor.getProperty().set({ representation, edgeVisibility });
-    tubeActor.setVisibility(!!visibility);
+    actor.getProperty().set({ representation, edgeVisibility });
+    actor.setVisibility(!!visibility);
     renderWindow.render();
   }
   representationSelector.addEventListener('change', updateRepresentation);
@@ -304,7 +275,12 @@ function createPipeline(fileName, fileContents) {
   function updateOpacity(event) {
     const opacity = Number(event.target.value) / 100;
     actor.getProperty().setOpacity(opacity);
-    tubeActor.getProperty().setOpacity(opacity);
+
+    actor.getProperty().setEdgeVisibility(1);
+    actor.getProperty().setEdgeColor(0.9,0.9,0.4);
+    actor.getProperty().setLineWidth(6);
+    actor.getProperty().setPointSize(12);
+
     renderWindow.render();
   }
 
@@ -315,16 +291,14 @@ function createPipeline(fileName, fileContents) {
   // --------------------------------------------------------------------
 
   const colorByOptions = [{ value: ':', label: 'Solid color' }].concat(
-    tubeFilter
-      .getOutputData()
+    source
       .getPointData()
       .getArrays()
       .map((a) => ({
         label: `(p) ${a.getName()}`,
         value: `PointData:${a.getName()}`,
       })),
-    tubeFilter
-      .getOutputData()
+    source
       .getCellData()
       .getArrays()
       .map((a) => ({
@@ -348,10 +322,9 @@ function createPipeline(fileName, fileContents) {
     let scalarMode = ScalarMode.DEFAULT;
     const scalarVisibility = location.length > 0;
     if (scalarVisibility) {
-      const activeArray = tubeFilter
-        .getOutputData()
-        [`get${location}`]()
-        .getArrayByName(colorByArrayName);
+      const newArray =
+        source[`get${location}`]().getArrayByName(colorByArrayName);
+      activeArray = newArray;
       const newDataRange = activeArray.getRange();
       dataRange[0] = newDataRange[0];
       dataRange[1] = newDataRange[1];
@@ -364,8 +337,8 @@ function createPipeline(fileName, fileContents) {
       const numberOfComponents = activeArray.getNumberOfComponents();
       if (numberOfComponents > 1) {
         // always start on magnitude setting
-        if (tubeMapper.getLookupTable()) {
-          const lut = tubeMapper.getLookupTable();
+        if (mapper.getLookupTable()) {
+          const lut = mapper.getLookupTable();
           lut.setVectorModeToMagnitude();
         }
         componentSelector.style.display = 'block';
@@ -379,17 +352,13 @@ function createPipeline(fileName, fileContents) {
       } else {
         componentSelector.style.display = 'none';
       }
+      scalarBarActor.setAxisLabel(colorByArrayName);
+      scalarBarActor.setVisibility(true);
     } else {
       componentSelector.style.display = 'none';
+      scalarBarActor.setVisibility(false);
     }
     mapper.set({
-      colorByArrayName,
-      colorMode,
-      interpolateScalarsBeforeMapping,
-      scalarMode,
-      scalarVisibility,
-    });
-    tubeMapper.set({
       colorByArrayName,
       colorMode,
       interpolateScalarsBeforeMapping,
@@ -402,13 +371,18 @@ function createPipeline(fileName, fileContents) {
   updateColorBy({ target: colorBySelector });
 
   function updateColorByComponent(event) {
-    if (tubeMapper.getLookupTable()) {
-      const tubeLut = tubeMapper.getLookupTable();
+    if (mapper.getLookupTable()) {
+      const lut = mapper.getLookupTable();
       if (event.target.value === -1) {
-        tubeLut.setVectorModeToMagnitude();
+        lut.setVectorModeToMagnitude();
       } else {
-        tubeLut.setVectorModeToComponent();
-        tubeLut.setVectorComponent(Number(event.target.value));
+        lut.setVectorModeToComponent();
+        lut.setVectorComponent(Number(event.target.value));
+        const newDataRange = activeArray.getRange(Number(event.target.value));
+        dataRange[0] = newDataRange[0];
+        dataRange[1] = newDataRange[1];
+        lookupTable.setMappingRange(dataRange[0], dataRange[1]);
+        lut.updateRange();
       }
       renderWindow.render();
     }
@@ -416,69 +390,38 @@ function createPipeline(fileName, fileContents) {
   componentSelector.addEventListener('change', updateColorByComponent);
 
   // --------------------------------------------------------------------
-  // Tube handling
+  // Immersion handling
   // --------------------------------------------------------------------
-  function showTubingControl(event) {
-    const check = event.target.checked;
-    if (check) {
-      tubeControlContainer.style.display = 'block';
-      tubeActor.setVisibility(true);
+
+  function toggleAR() {
+    const SESSION_IS_AR = true;
+    if (immersionSelector.textContent === 'Start AR') {
+      fullScreenRenderWindow.setBackground([...background, 0]);
+      fullScreenRenderWindow
+        .getApiSpecificRenderWindow()
+        .startXR(SESSION_IS_AR);
+      immersionSelector.textContent = 'Exit AR';
     } else {
-      tubeControlContainer.style.display = 'none';
-      tubeActor.setVisibility(false);
+      fullScreenRenderWindow.setBackground([...background, 255]);
+      fullScreenRenderWindow.getApiSpecificRenderWindow().stopXR(SESSION_IS_AR);
+      immersionSelector.textContent = 'Start AR';
     }
-    renderWindow.render();
   }
-
-  tubeCheckBox.addEventListener('change', showTubingControl);
-
-  function updateTubeRadius(event) {
-    const radius = Number(event.target.value) / 100;
-    tubeFilter.setRadius(radius);
-    renderWindow.render();
-  }
-
-  radiusSelector.addEventListener('input', updateTubeRadius);
-
-  function updateTubeNumberOfSides(event) {
-    const nSides = Number(event.target.value);
-    tubeFilter.setNumberOfSides(nSides);
-    renderWindow.render();
-  }
-
-  nsidesSelector.addEventListener('input', updateTubeNumberOfSides);
-
-  function updateTubeOnRatio(event) {
-    const onRatio = Number(event.target.value);
-    tubeFilter.setOnRatio(onRatio);
-    renderWindow.render();
-  }
-
-  onRatioSelector.addEventListener('input', updateTubeOnRatio);
-
-  function updateTubeCapping(event) {
-    const checked = event.target.checked;
-    tubeFilter.setCapping(checked);
-    renderWindow.render();
-  }
-
-  cappingSelector.addEventListener('change', updateTubeCapping);
+  immersionSelector.addEventListener('click', toggleAR);
 
   // --------------------------------------------------------------------
   // Pipeline handling
   // --------------------------------------------------------------------
 
-  tubeActor.setMapper(tubeMapper);
-  tubeMapper.setInputConnection(tubeFilter.getOutputPort());
-  renderer.addActor(tubeActor);
   actor.setMapper(mapper);
-  mapper.setInputConnection(vtpReader.getOutputPort());
+  mapper.setInputData(source);
   renderer.addActor(actor);
 
+  scalarBarActor.setScalarsToColors(mapper.getLookupTable());
+
   // Manage update when lookupTable change
-  lookupTable.onModified(() => {
-    renderWindow.render();
-  });
+  const debouncedRender = debounce(renderWindow.render, 10);
+  lookupTable.onModified(debouncedRender, -1);
 
   // First render
   renderer.resetCamera();
@@ -486,16 +429,38 @@ function createPipeline(fileName, fileContents) {
 
   global.pipeline[fileName] = {
     actor,
-    tubeActor,
-    tubeFilter,
-    tubeMapper,
     mapper,
+    source,
     lookupTable,
     renderer,
     renderWindow,
-    vtpReader,
   };
+
+  // Update stats
+  fpsMonitor.update();
 }
+
+
+
+// ------------------------------------
+
+//fullScreenRenderer.addController(controlPanel);
+// const representationSelector = document.querySelector('.representations');
+// const resolutionChange = document.querySelector('.resolution');
+
+// representationSelector.addEventListener('change', (e) => {
+//   const newRepValue = Number(e.target.value);
+//   actor.getProperty().setRepresentation(newRepValue);
+//   renderWindow.render();
+//   fpsMonitor.update();
+// });
+
+// resolutionChange.addEventListener('input', (e) => {
+//   const resolution = Number(e.target.value);
+//   coneSource.setResolution(resolution);
+//   renderWindow.render();
+//   fpsMonitor.update();
+// });
 
 // ----------------------------------------------------------------------------
 
@@ -521,25 +486,45 @@ export function load(container, options) {
     }
     updateCamera(renderer.getActiveCamera());
   } else if (options.fileURL) {
+    const urls = [].concat(options.fileURL);
     const progressContainer = document.createElement('div');
     progressContainer.setAttribute('class', style.progress);
     container.appendChild(progressContainer);
 
     const progressCallback = (progressEvent) => {
-      const percent = Math.floor(
-        (100 * progressEvent.loaded) / progressEvent.total
-      );
-      progressContainer.innerHTML = `Loading ${percent}%`;
+      if (progressEvent.lengthComputable) {
+        const percent = Math.floor(
+          (100 * progressEvent.loaded) / progressEvent.total
+        );
+        progressContainer.innerHTML = `Loading ${percent}%`;
+      } else {
+        progressContainer.innerHTML = formatBytesToProperUnit(
+          progressEvent.loaded
+        );
+      }
     };
 
-    HttpDataAccessHelper.fetchBinary(options.fileURL, {
-      progressCallback,
-    }).then((binary) => {
-      container.removeChild(progressContainer);
-      createViewer(container);
-      createPipeline(defaultName, binary);
-      updateCamera(renderer.getActiveCamera());
-    });
+    createViewer(container);
+    const nbURLs = urls.length;
+    let nbLoadedData = 0;
+
+    /* eslint-disable no-loop-func */
+    while (urls.length) {
+      const url = urls.pop();
+      const name = Array.isArray(userParams.name)
+        ? userParams.name[urls.length]
+        : `Data ${urls.length + 1}`;
+      HttpDataAccessHelper.fetchBinary(url, {
+        progressCallback,
+      }).then((binary) => {
+        nbLoadedData++;
+        if (nbLoadedData === nbURLs) {
+          container.removeChild(progressContainer);
+        }
+        createPipeline(name, binary);
+        updateCamera(renderer.getActiveCamera());
+      });
+    }
   }
 }
 
@@ -562,7 +547,7 @@ export function initLocalFileLoader(container) {
   myContainer.appendChild(fileContainer);
 
   const fileInput = fileContainer.querySelector('input');
-
+  
   function handleFile(e) {
     preventDefaults(e);
     const dataTransfer = e.dataTransfer;
@@ -579,7 +564,7 @@ export function initLocalFileLoader(container) {
   fileContainer.addEventListener('dragover', preventDefaults);
 }
 
-// Look at URL an see if we should load a file
+// YE DEKHO!!
 // ?fileURL=https://data.kitware.com/api/v1/item/59cdbb588d777f31ac63de08/download
 if (userParams.url || userParams.fileURL) {
   const exampleContainer = document.querySelector('.content');
@@ -593,15 +578,8 @@ if (userParams.url || userParams.fileURL) {
   }
 
   load(myContainer, userParams);
+  
 }
-
-
-
-
-
-// /////////////////////
-
-
 
 // Auto setup if no method get called within 100ms
 setTimeout(() => {
