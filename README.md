@@ -42,19 +42,19 @@ functions, filters e.t.c which are used.
 The project is easy to set up in your local system. Assumptions involve : git has to be
 installed in your system (or if not there must be some other way you can get the project
 code). Prefers the latest version of node and npm, although any new npm versions would
-still work. Requires php to be installed to run the html server on your local host.
-Get the project code
-git clone https://github.com/Sigsev-Dev/visualizer.git
-And then navigate to the cloned code folder:
-cd visualizer
-Start the build server
-Npm run build
-Navigate inside the src/dist folder to find index.html file:
-cd src/dist
-Run the html file
-Php -S localhost:8000
-Open the software
-Navigate to localhost:8000 on your browser.
+still work. Requires php to be installed to run the html server on your local host. \
+Get the project code \
+git clone https://github.com/Sigsev-Dev/visualizer.git \
+And then navigate to the cloned code folder: \
+cd visualizer \
+Start the build server \
+Npm run build \
+Navigate inside the src/dist folder to find index.html file: \
+cd src/dist \
+Run the html file \
+Php -S localhost:8000 \
+Open the software \
+Navigate to localhost:8000 on your browser. \
 
 # Using the Software
 
